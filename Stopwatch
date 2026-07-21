@@ -1,0 +1,82 @@
+package com.example.smartalarm.fragments;
+
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.fragment.app.Fragment;
+import com.example.smartalarm.R;
+
+import java.util.Locale;
+
+public class StopwatchFragment extends Fragment {
+
+    private TextView tvStopwatch;
+    private Button btnStartPause;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private long startTime = 0;      // moc thoi gian bat dau (elapsedRealtime)
+    private long elapsedBefore = 0;  // thoi gian da chay truoc khi pause
+    private boolean isRunning = false;
+
+    private final Runnable updateRunnable = new Runnable() {
+        @Override
+        public void run() {
+            updateText(elapsedBefore + (SystemClock.elapsedRealtime() - startTime));
+            handler.postDelayed(this, 100);
+        }
+    };
+
+    @Override
+    public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_stopwatch, container, false);
+
+        tvStopwatch = view.findViewById(R.id.tv_stopwatch);
+        btnStartPause = view.findViewById(R.id.btn_start_pause);
+        Button btnReset = view.findViewById(R.id.btn_reset);
+
+        btnStartPause.setOnClickListener(v -> {
+            if (!isRunning) {
+                startTime = SystemClock.elapsedRealtime();
+                handler.post(updateRunnable);
+                isRunning = true;
+                btnStartPause.setText("Pause");
+            } else {
+                elapsedBefore += SystemClock.elapsedRealtime() - startTime;
+                handler.removeCallbacks(updateRunnable);
+                isRunning = false;
+                btnStartPause.setText("Start");
+            }
+        });
+
+        btnReset.setOnClickListener(v -> {
+            handler.removeCallbacks(updateRunnable);
+            isRunning = false;
+            elapsedBefore = 0;
+            btnStartPause.setText("Start");
+            updateText(0);
+        });
+
+        return view;
+    }
+
+    private void updateText(long millis) {
+        long minutes = millis / 60000;
+        long seconds = (millis % 60000) / 1000;
+        long tenths = (millis % 1000) / 100;
+        tvStopwatch.setText(String.format(Locale.US, "%02d:%02d.%d", minutes, seconds, tenths));
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        handler.removeCallbacks(updateRunnable);
+    }
+}
