@@ -1,0 +1,47 @@
+package com.example.smartalarm.activities;
+
+import android.os.Bundle;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.TimePicker;
+import android.widget.Toast;
+import androidx.appcompat.app.AppCompatActivity;
+import com.example.smartalarm.R;
+
+public class AddEditAlarmActivity extends AppCompatActivity {
+
+    private TimePicker timePicker;
+    private EditText etName;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_add_edit_alarm);
+
+        timePicker = findViewById(R.id.time_picker);
+        timePicker.setIs24HourView(true);
+        etName = findViewById(R.id.et_name);
+
+        findViewById(R.id.tv_cancel).setOnClickListener(v -> finish());
+
+        findViewById(R.id.row_melody).setOnClickListener(v -> {
+            // TODO (Member 2): mo music picker (MusicHelper)
+            Toast.makeText(this, "Music picker - Member 2", Toast.LENGTH_SHORT).show();
+        });
+
+        Button btnAdd = findViewById(R.id.btn_add);
+        btnAdd.setOnClickListener(v -> {
+            int hour = timePicker.getHour();
+            int minute = timePicker.getMinute();
+            String name = etName.getText().toString().trim();
+            if (name.isEmpty()) name = "Alarm";
+
+            // TODO (Member 1 + 2): tao Alarm model, luu vao database,
+            // goi AlarmScheduler de dat AlarmManager
+            Toast.makeText(this,
+                    String.format("Saved %02d:%02d - %s", hour, minute, name),
+                    Toast.LENGTH_SHORT).show();
+            finish();
+        });
+    }
+}
