@@ -1,0 +1,43 @@
+package com.example.smartalarm.activities;
+
+import android.os.Bundle;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.fragment.app.Fragment;
+import com.example.smartalarm.R;
+import com.example.smartalarm.fragments.AlarmFragment;
+import com.example.smartalarm.fragments.StopwatchFragment;
+import com.example.smartalarm.fragments.TimerFragment;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
+
+public class MainActivity extends AppCompatActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        BottomNavigationView bottomNav = findViewById(R.id.bottom_navigation);
+        bottomNav.setOnItemSelectedListener(item -> {
+            Fragment selected = null;
+            int id = item.getItemId();
+            if (id == R.id.nav_alarm) {
+                selected = new AlarmFragment();
+            } else if (id == R.id.nav_stopwatch) {
+                selected = new StopwatchFragment();
+            } else if (id == R.id.nav_timer) {
+                selected = new TimerFragment();
+            }
+            if (selected != null) {
+                getSupportFragmentManager().beginTransaction()
+                        .replace(R.id.fragment_container, selected)
+                        .commit();
+            }
+            return true;
+        });
+
+        // Man hinh mac dinh
+        if (savedInstanceState == null) {
+            bottomNav.setSelectedItemId(R.id.nav_alarm);
+        }
+    }
+}
