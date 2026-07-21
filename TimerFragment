@@ -1,0 +1,132 @@
+package com.example.smartalarm.fragments;
+
+import android.os.Bundle;
+import android.os.CountDownTimer;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.NumberPicker;
+import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.fragment.app.Fragment;
+import com.example.smartalarm.R;
+
+import java.util.Locale;
+
+public class TimerFragment extends Fragment {
+
+    private NumberPicker pickerHours, pickerMinutes, pickerSeconds;
+    private TextView tvCountdown;
+    private View layoutPickers;
+    private Button btnStart, btnCancel;
+
+    private CountDownTimer countDownTimer;
+    private long remainingMillis = 0;
+    private boolean isRunning = false;
+    private boolean isPaused = false;
+
+    @Override
+    public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container,
+                             Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment_timer, container, false);
+
+        pickerHours = view.findViewById(R.id.picker_hours);
+        pickerMinutes = view.findViewById(R.id.picker_minutes);
+        pickerSeconds = view.findViewById(R.id.picker_seconds);
+        tvCountdown = view.findViewById(R.id.tv_countdown);
+        layoutPickers = view.findViewById(R.id.layout_pickers);
+        btnStart = view.findViewById(R.id.btn_start);
+        btnCancel = view.findViewById(R.id.btn_cancel);
+
+        setupPicker(pickerHours, 23);
+        setupPicker(pickerMinutes, 59);
+        setupPicker(pickerSeconds, 59);
+
+        btnStart.setOnClickListener(v -> {
+            if (!isRunning) {
+                startTimer();
+            } else if (!isPaused) {
+                pauseTimer();
+            } else {
+                resumeTimer();
+            }
+        });
+
+        btnCancel.setOnClickListener(v -> resetTimer());
+        return view;
+    }
+
+    private void setupPicker(NumberPicker picker, int max) {
+        picker.setMinValue(0);
+        picker.setMaxValue(max);
+        picker.setFormatter(value -> String.format(Locale.US, "%02d", value));
+    }
+
+    private void startTimer() {
+        long totalMillis = (pickerHours.getValue() * 3600L
+                + pickerMinutes.getValue() * 60L
+                + pickerSeconds.getValue()) * 1000L;
+        if (totalMillis == 0) return;
+        remainingMillis = totalMillis;
+        startCountdown(remainingMillis);
+        isRunning = true;
+        isPaused = false;
+        layoutPickers.setVisibility(View.GONE);
+        tvCountdown.setVisibility(View.VISIBLE);
+        btnStart.setText("Pause");
+    }
+
+    private void startCountdown(long millis) {
+        countDownTimer = new CountDownTimer(millis, 250) {
+            @Override
+            public void onTick(long millisUntilFinished) {
+                remainingMillis = millisUntilFinished;
+                updateCountdownText();
+            }
+
+            @Override
+            public void onFinish() {
+                remainingMillis = 0;
+                updateCountdownText();
+                // TODO: phat am thanh (MediaPlayer) khi het gio
+                resetTimer();
+            }
+        }.start();
+    }
+
+    private void pauseTimer() {
+        if (countDownTimer != null) countDownTimer.cancel();
+        isPaused = true;
+        btnStart.setText("Resume");
+    }
+
+    private void resumeTimer() {
+        startCountdown(remainingMillis);
+        isPaused = false;
+        btnStart.setText("Pause");
+    }
+
+    private void resetTimer() {
+        if (countDownTimer != null) countDownTimer.cancel();
+        isRunning = false;
+        isPaused = false;
+        layoutPickers.setVisibility(View.VISIBLE);
+        tvCountdown.setVisibility(View.GONE);
+        btnStart.setText("Start");
+    }
+
+    private void updateCountdownText() {
+        long totalSeconds = remainingMillis / 1000;
+        long h = totalSeconds / 3600;
+        long m = (totalSeconds % 3600) / 60;
+        long s = totalSeconds % 60;
+        tvCountdown.setText(String.format(Locale.US, "%02d:%02d:%02d", h, m, s));
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (countDownTimer != null) countDownTimer.cancel();
+    }
+}
