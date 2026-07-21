@@ -1,0 +1,646 @@
+package com.example.alarm.Fragment;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Bundle;
+import android.provider.OpenableColumns;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.NumberPicker;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.widget.SwitchCompat;
+import androidx.fragment.app.Fragment;
+
+import android.content.Context;
+
+import com.example.alarm.DAO.AlarmDao;
+import com.example.alarm.Model.Alarm;
+import com.example.alarm.R;
+import com.example.alarm.Util.AlarmScheduler;
+
+import java.util.Calendar;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class CrudFragment extends Fragment {
+
+    private static final String ARG_ALARM_ID = "arg_alarm_id";
+    private static final int NEW_ALARM_ID = -1;
+
+    private NumberPicker pickerHour;
+    private NumberPicker pickerMinute;
+
+    private TextView btnClose;
+    private TextView btnSave;
+    private TextView tvTitle;
+    private TextView tvMelody;
+    private TextView tvSnoozeDuration;
+
+    private EditText etName;
+    private SwitchCompat switchSnooze;
+
+    private View rowMelody;
+    private View rowSnoozeDuration;
+
+    private Button btnDelete;
+
+    private AlarmDao alarmDao;
+    private Alarm currentAlarm;
+
+    private ExecutorService databaseExecutor;
+
+    private int alarmId = NEW_ALARM_ID;
+
+    private Uri selectedMusicUri;
+    private int snoozeDuration = 9;
+
+    /*
+     * Launcher dùng để chọn file âm thanh.
+     */
+    private final ActivityResultLauncher<Intent> musicPickerLauncher =
+            registerForActivityResult(
+                    new ActivityResultContracts.StartActivityForResult(),
+                    result -> {
+                        if (result.getResultCode() != Activity.RESULT_OK) {
+                            return;
+                        }
+
+                        Intent data = result.getData();
+
+                        if (data == null || data.getData() == null) {
+                            return;
+                        }
+
+                        selectedMusicUri = data.getData();
+
+                        try {
+                            requireContext()
+                                    .getContentResolver()
+                                    .takePersistableUriPermission(
+                                            selectedMusicUri,
+                                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                    );
+                        } catch (SecurityException ignored) {
+                        }
+
+                        tvMelody.setText(
+                                getFileName(selectedMusicUri) + "  ›"
+                        );
+                    }
+            );
+
+    public CrudFragment() {
+        super(R.layout.fragment_add_edit_alarm);
+    }
+
+    public static CrudFragment newInstance(int alarmId) {
+        CrudFragment fragment = new CrudFragment();
+
+        Bundle args = new Bundle();
+        args.putInt(ARG_ALARM_ID, alarmId);
+
+        fragment.setArguments(args);
+
+        return fragment;
+    }
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        if (getArguments() != null) {
+            alarmId = getArguments().getInt(
+                    ARG_ALARM_ID,
+                    NEW_ALARM_ID
+            );
+        }
+    }
+
+    @Override
+    public void onViewCreated(
+            @NonNull View view,
+            @Nullable Bundle savedInstanceState
+    ) {
+        super.onViewCreated(view, savedInstanceState);
+
+        databaseExecutor = Executors.newSingleThreadExecutor();
+        alarmDao = new AlarmDao(requireContext());
+
+        bindViews(view);
+        setupNumberPickers();
+        setupClickListeners();
+
+        if (alarmId == NEW_ALARM_ID) {
+            setupNewAlarm();
+        } else {
+            loadAlarmFromDatabase();
+        }
+    }
+
+    private void bindViews(View view) {
+        pickerHour = view.findViewById(R.id.picker_hour);
+        pickerMinute = view.findViewById(R.id.picker_minute);
+
+        btnClose = view.findViewById(R.id.btn_close);
+        btnSave = view.findViewById(R.id.btn_save);
+        tvTitle = view.findViewById(R.id.tv_title);
+
+        etName = view.findViewById(R.id.et_name);
+
+        rowMelody = view.findViewById(R.id.row_melody);
+        tvMelody = view.findViewById(R.id.tv_melody);
+
+        switchSnooze = view.findViewById(R.id.switch_snooze);
+
+        rowSnoozeDuration =
+                view.findViewById(R.id.row_snooze_duration);
+
+        tvSnoozeDuration =
+                view.findViewById(R.id.tv_snooze_duration);
+
+        btnDelete = view.findViewById(R.id.btn_delete);
+    }
+
+    private void setupNumberPickers() {
+        pickerHour.setMinValue(0);
+        pickerHour.setMaxValue(23);
+        pickerHour.setWrapSelectorWheel(true);
+
+        pickerMinute.setMinValue(0);
+        pickerMinute.setMaxValue(59);
+        pickerMinute.setWrapSelectorWheel(true);
+
+        pickerHour.setFormatter(value ->
+                String.format(
+                        Locale.getDefault(),
+                        "%02d",
+                        value
+                )
+        );
+
+        pickerMinute.setFormatter(value ->
+                String.format(
+                        Locale.getDefault(),
+                        "%02d",
+                        value
+                )
+        );
+    }
+
+    private void setupClickListeners() {
+        btnClose.setOnClickListener(view ->
+                getParentFragmentManager().popBackStack()
+        );
+
+        btnSave.setOnClickListener(view ->
+                saveAlarm()
+        );
+
+        btnDelete.setOnClickListener(view ->
+                showDeleteConfirmation()
+        );
+
+        rowMelody.setOnClickListener(view ->
+                openMusicPicker()
+        );
+
+        rowSnoozeDuration.setOnClickListener(view ->
+                showSnoozeDurationDialog()
+        );
+
+        switchSnooze.setOnCheckedChangeListener(
+                (buttonView, isChecked) -> {
+                    rowSnoozeDuration.setEnabled(isChecked);
+
+                    tvSnoozeDuration.setAlpha(
+                            isChecked ? 1f : 0.4f
+                    );
+                }
+        );
+    }
+
+    private void setupNewAlarm() {
+        currentAlarm = new Alarm();
+
+        Calendar calendar = Calendar.getInstance();
+
+        pickerHour.setValue(
+                calendar.get(Calendar.HOUR_OF_DAY)
+        );
+
+        pickerMinute.setValue(
+                calendar.get(Calendar.MINUTE)
+        );
+
+        tvTitle.setText("Add Alarm");
+        etName.setText("");
+
+        selectedMusicUri = null;
+        tvMelody.setText("Default  ›");
+
+        snoozeDuration = 9;
+        tvSnoozeDuration.setText("9 mins");
+
+        switchSnooze.setChecked(true);
+
+        btnDelete.setVisibility(View.GONE);
+
+        /*
+         * Giá trị mặc định cho alarm mới.
+         */
+        currentAlarm.setEnabled(true);
+        currentAlarm.setRepeatDays("0000000");
+        currentAlarm.setMusicUri(null);
+        currentAlarm.setVolumne(100);
+        currentAlarm.setRandomMusic(false);
+        currentAlarm.setLoop(true);
+        currentAlarm.setVibrate(true);
+    }
+
+    private void loadAlarmFromDatabase() {
+        databaseExecutor.execute(() -> {
+            Alarm alarm = alarmDao.getAlarmbyId(alarmId);
+
+            if (!isAdded()) {
+                return;
+            }
+
+            requireActivity().runOnUiThread(() -> {
+                if (!isAdded() || getView() == null) {
+                    return;
+                }
+
+                if (alarm == null) {
+                    showToast("Không tìm thấy báo thức");
+                    getParentFragmentManager().popBackStack();
+                    return;
+                }
+
+                currentAlarm = alarm;
+                displayAlarm(alarm);
+            });
+        });
+    }
+
+    private void displayAlarm(Alarm alarm) {
+        tvTitle.setText("Edit Alarm");
+
+        pickerHour.setValue(alarm.getHour());
+        pickerMinute.setValue(alarm.getMinute());
+
+        String label = alarm.getLabel();
+
+        if (label == null) {
+            label = "";
+        }
+
+        etName.setText(label);
+
+        String musicUri = alarm.getMusicUri();
+
+        if (musicUri == null || musicUri.trim().isEmpty()) {
+            selectedMusicUri = null;
+            tvMelody.setText("Default  ›");
+        } else {
+            selectedMusicUri = Uri.parse(musicUri);
+
+            tvMelody.setText(
+                    getFileName(selectedMusicUri) + "  ›"
+            );
+        }
+
+        /*
+         * Tạm dùng trường loop để lưu trạng thái Snooze.
+         */
+        switchSnooze.setChecked(alarm.getLoop());
+
+        snoozeDuration = 9;
+        tvSnoozeDuration.setText("9 mins");
+
+        btnDelete.setVisibility(View.VISIBLE);
+    }
+
+    private void saveAlarm() {
+        if (currentAlarm == null) {
+            showToast("Dữ liệu báo thức chưa sẵn sàng");
+            return;
+        }
+
+        String alarmName = etName.getText()
+                .toString()
+                .trim();
+
+        if (alarmName.isEmpty()) {
+            alarmName = "Alarm";
+        }
+
+        currentAlarm.setHour(pickerHour.getValue());
+        currentAlarm.setMinute(pickerMinute.getValue());
+        currentAlarm.setLabel(alarmName);
+
+        /*
+         * Khi bấm Save, alarm được bật mặc định.
+         */
+        currentAlarm.setEnabled(true);
+
+        /*
+         * Tạm ánh xạ Snooze vào thuộc tính loop.
+         */
+        currentAlarm.setLoop(
+                switchSnooze.isChecked()
+        );
+
+        if (selectedMusicUri == null) {
+            currentAlarm.setMusicUri(null);
+        } else {
+            currentAlarm.setMusicUri(
+                    selectedMusicUri.toString()
+            );
+        }
+
+        /*
+         * Đảm bảo các trường chuỗi không bị null.
+         */
+        if (currentAlarm.getRepeatDays() == null) {
+            currentAlarm.setRepeatDays("0000000");
+        }
+
+        final Context appContext =
+                requireContext().getApplicationContext();
+
+        databaseExecutor.execute(() -> {
+            boolean success;
+
+            if (alarmId == NEW_ALARM_ID) {
+                long insertedId =
+                        alarmDao.insertAlarm(currentAlarm);
+
+                success = insertedId != -1;
+
+                if (success) {
+                    currentAlarm.setId((int) insertedId);
+                }
+            } else {
+                int rowsUpdated =
+                        alarmDao.updateAlarm(currentAlarm);
+
+                success = rowsUpdated > 0;
+            }
+
+            /*
+             * Đặt lại lịch với thông tin mới nhất.
+             */
+            if (success) {
+                AlarmScheduler.cancel(
+                        appContext,
+                        currentAlarm.getId()
+                );
+                AlarmScheduler.schedule(
+                        appContext,
+                        currentAlarm
+                );
+            }
+
+            if (!isAdded()) {
+                return;
+            }
+
+            requireActivity().runOnUiThread(() -> {
+                if (success) {
+                    sendResultAndClose(
+                            AlarmFragment.ACTION_SAVED
+                    );
+                } else {
+                    showToast("Không thể lưu báo thức");
+                }
+            });
+        });
+    }
+
+    private void openMusicPicker() {
+        Intent intent = new Intent(
+                Intent.ACTION_OPEN_DOCUMENT
+        );
+
+        intent.setType("audio/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+
+        intent.addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+        );
+
+        musicPickerLauncher.launch(intent);
+    }
+
+    private void showSnoozeDurationDialog() {
+        if (!switchSnooze.isChecked()) {
+            return;
+        }
+
+        String[] durationLabels = {
+                "5 mins",
+                "9 mins",
+                "10 mins",
+                "15 mins",
+                "20 mins",
+                "30 mins"
+        };
+
+        int[] durationValues = {
+                5, 9, 10, 15, 20, 30
+        };
+
+        int checkedItem = 1;
+
+        for (int i = 0; i < durationValues.length; i++) {
+            if (durationValues[i] == snoozeDuration) {
+                checkedItem = i;
+                break;
+            }
+        }
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Snooze Duration")
+                .setSingleChoiceItems(
+                        durationLabels,
+                        checkedItem,
+                        null
+                )
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton(
+                        "Done",
+                        (dialog, which) -> {
+                            AlertDialog alertDialog =
+                                    (AlertDialog) dialog;
+
+                            int selectedPosition =
+                                    alertDialog
+                                            .getListView()
+                                            .getCheckedItemPosition();
+
+                            if (selectedPosition >= 0) {
+                                snoozeDuration =
+                                        durationValues[selectedPosition];
+
+                                tvSnoozeDuration.setText(
+                                        snoozeDuration + " mins"
+                                );
+                            }
+                        }
+                )
+                .show();
+    }
+
+    private void showDeleteConfirmation() {
+        if (alarmId == NEW_ALARM_ID) {
+            return;
+        }
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Delete Alarm")
+                .setMessage(
+                        "Are you sure you want to delete this alarm?"
+                )
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton(
+                        "Delete",
+                        (dialog, which) -> deleteAlarm()
+                )
+                .show();
+    }
+
+    private void deleteAlarm() {
+        final Context appContext =
+                requireContext().getApplicationContext();
+
+        databaseExecutor.execute(() -> {
+            int deletedRows =
+                    alarmDao.deleteAlarm(alarmId);
+
+            if (deletedRows > 0) {
+                AlarmScheduler.cancel(appContext, alarmId);
+            }
+
+            if (!isAdded()) {
+                return;
+            }
+
+            requireActivity().runOnUiThread(() -> {
+                if (deletedRows > 0) {
+                    sendResultAndClose(
+                            AlarmFragment.ACTION_DELETED
+                    );
+                } else {
+                    showToast("Không thể xóa báo thức");
+                }
+            });
+        });
+    }
+
+    private String getFileName(Uri uri) {
+        if (uri == null) {
+            return "Default";
+        }
+
+        String fileName = null;
+
+        try (Cursor cursor =
+                     requireContext()
+                             .getContentResolver()
+                             .query(
+                                     uri,
+                                     null,
+                                     null,
+                                     null,
+                                     null
+                             )) {
+
+            if (cursor != null && cursor.moveToFirst()) {
+                int nameIndex = cursor.getColumnIndex(
+                        OpenableColumns.DISPLAY_NAME
+                );
+
+                if (nameIndex >= 0) {
+                    fileName = cursor.getString(nameIndex);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (fileName == null || fileName.trim().isEmpty()) {
+            fileName = uri.getLastPathSegment();
+        }
+
+        if (fileName == null || fileName.trim().isEmpty()) {
+            fileName = "Selected sound";
+        }
+
+        return fileName;
+    }
+
+    private void sendResultAndClose(String action) {
+        Bundle result = new Bundle();
+
+        result.putString(
+                AlarmFragment.RESULT_ACTION,
+                action
+        );
+
+        getParentFragmentManager().setFragmentResult(
+                AlarmFragment.REQUEST_ALARM_CHANGED,
+                result
+        );
+
+        getParentFragmentManager().popBackStack();
+    }
+
+    private void showToast(String message) {
+        if (!isAdded()) {
+            return;
+        }
+
+        Toast.makeText(
+                requireContext(),
+                message,
+                Toast.LENGTH_SHORT
+        ).show();
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+
+        if (databaseExecutor != null) {
+            databaseExecutor.shutdown();
+        }
+
+        pickerHour = null;
+        pickerMinute = null;
+
+        btnClose = null;
+        btnSave = null;
+        tvTitle = null;
+        tvMelody = null;
+        tvSnoozeDuration = null;
+
+        etName = null;
+        switchSnooze = null;
+
+        rowMelody = null;
+        rowSnoozeDuration = null;
+
+        btnDelete = null;
+    }
+}

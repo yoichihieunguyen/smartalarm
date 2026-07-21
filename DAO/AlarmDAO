@@ -1,0 +1,103 @@
+package com.example.alarm.DAO;
+
+import android.content.ContentValues;
+import android.content.Context;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+
+import com.example.alarm.Database.AlarmContract;
+import com.example.alarm.Model.Alarm;
+import com.example.alarm.Database.AlarmDatabaseHelper;
+
+
+import java.util.*;
+
+
+public class AlarmDao {
+    private final AlarmDatabaseHelper databaseHelper;
+
+    public AlarmDao(Context context){
+        databaseHelper = new AlarmDatabaseHelper(context);
+    }
+
+    public long insertAlarm(Alarm alarm){
+        ContentValues values = new ContentValues();
+        values = alarmToContentValues(alarm);
+        long rowId = databaseHelper.insertAlarm(values);
+        return rowId;
+    }
+
+    public int deleteAlarm(int id){
+        int rowDel = databaseHelper.deleteAlarm(id);
+        return rowDel;
+    }
+
+    public int updateAlarm(Alarm alarm){
+        ContentValues values = new ContentValues();
+        values = alarmToContentValues(alarm);
+
+        int rowsUp = databaseHelper.updateAlarm(values, alarm);
+        return rowsUp;
+    }
+    public Alarm getAlarmbyId(int id){
+        Alarm alarm = databaseHelper.getAlarmById(id);
+        return alarm;
+    }
+
+    public List<Alarm> getAllAlarms(){
+        List<Alarm> al = new ArrayList<>();
+        al = databaseHelper.getAllAlarms();
+        return al;
+    }
+
+    private ContentValues alarmToContentValues(Alarm alarm){
+        ContentValues values = new ContentValues();
+
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_HOUR,
+                alarm.getHour()
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_MINUTE,
+                alarm.getMinute()
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_LABEL,
+                alarm.getLabel()
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_REPEAT_DAYS,
+                alarm.getRepeatDays()
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_ENABLED,
+                alarm.getEnabled() ? 1 : 0
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_MUSIC_URI,
+                alarm.getMusicUri()
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_VOLUMNE,
+                alarm.getVolumne()
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_RANDOM,
+                alarm.getRandomMusic() ? 1 : 0
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_LOOP,
+                alarm.getLoop() ? 1 : 0
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_VIBRATE,
+                alarm.getVibrate() ? 1 : 0
+        );
+        values.put(
+                AlarmContract.AlarmEntry.COLUMN_MUSIC_ID,
+                alarm.getMusicId()
+        );
+        return values;
+    }
+
+}

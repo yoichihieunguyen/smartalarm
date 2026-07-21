@@ -1,0 +1,106 @@
+package com.example.alarm.Activities;
+
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Bundle;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.Fragment;
+
+import com.example.alarm.Fragment.AlarmFragment;
+import com.example.alarm.Fragment.StopwatchFragment;
+import com.example.alarm.Fragment.TimerFragment;
+import com.example.alarm.R;
+import com.example.alarm.Util.NotificationHelper;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
+
+public class MainActivity extends AppCompatActivity {
+
+    private static final int REQUEST_POST_NOTIFICATIONS = 100;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        NotificationHelper.createNotificationChannel(this);
+        requestNotificationPermissionIfNeeded();
+
+        setupBottomNavigation();
+
+        if (savedInstanceState == null) {
+            showFragment(new AlarmFragment());
+        }
+    }
+
+    private void setupBottomNavigation() {
+        BottomNavigationView bottomNavigation =
+                findViewById(R.id.bottom_navigation);
+
+        bottomNavigation.setOnItemSelectedListener(item -> {
+            int itemId = item.getItemId();
+
+            Fragment fragment = null;
+
+            if (itemId == R.id.nav_alarm) {
+                fragment = new AlarmFragment();
+            } else if (itemId == R.id.nav_stopwatch) {
+                fragment = new StopwatchFragment();
+            } else if (itemId == R.id.nav_timer) {
+                fragment = new TimerFragment();
+            }
+
+            if (fragment == null) {
+                return false;
+            }
+
+            /*
+             * Xóa back stack (ví dụ đang mở CrudFragment)
+             * trước khi chuyển tab.
+             */
+            getSupportFragmentManager().popBackStack(
+                    null,
+                    androidx.fragment.app.FragmentManager
+                            .POP_BACK_STACK_INCLUSIVE
+            );
+
+            showFragment(fragment);
+            return true;
+        });
+    }
+
+    private void showFragment(Fragment fragment) {
+        getSupportFragmentManager()
+                .beginTransaction()
+                .replace(R.id.fragment_container, fragment)
+                .commit();
+    }
+
+    /**
+     * Android 13+ cần xin quyền POST_NOTIFICATIONS
+     * để hiển thị thông báo báo thức.
+     */
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return;
+        }
+
+        boolean granted = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED;
+
+        if (!granted) {
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{
+                            Manifest.permission.POST_NOTIFICATIONS
+                    },
+                    REQUEST_POST_NOTIFICATIONS
+            );
+        }
+    }
+}

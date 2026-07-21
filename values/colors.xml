@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#8A8296</color>
+    <color name="text_disabled">#524B5E</color>
+    <color name="bg_dark">#171021</color>
+    <color name="bg_card">#221A30</color>
+    <color name="bg_nav">#1D1529</color>
+    <color name="purple_accent">#A78BFA</color>
+    <color name="purple_light">#C4B5FD</color>
+    <color name="switch_track_off">#2E2440</color>
+    <color name="divider">#2A2138</color>
+</resources>

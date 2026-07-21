@@ -1,0 +1,227 @@
+package com.example.alarm.Fragment;
+
+import android.os.Bundle;
+import android.view.View;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import android.content.Context;
+
+import com.example.alarm.Adapter.AlarmAdapter;
+import com.example.alarm.DAO.AlarmDao;
+import com.example.alarm.Model.Alarm;
+import com.example.alarm.R;
+import com.example.alarm.Util.AlarmScheduler;
+
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class AlarmFragment extends Fragment {
+
+    public static final String REQUEST_ALARM_CHANGED =
+            "request_alarm_changed";
+
+    public static final String RESULT_ACTION =
+            "result_action";
+
+    public static final String ACTION_SAVED =
+            "action_saved";
+
+    public static final String ACTION_DELETED =
+            "action_deleted";
+
+    private RecyclerView rvAlarms;
+    private TextView tvAddNew;
+
+    private AlarmAdapter alarmAdapter;
+    private AlarmDao alarmDao;
+
+    private ExecutorService databaseExecutor;
+
+    public AlarmFragment() {
+        super(R.layout.fragment_alarm);
+    }
+
+    @Override
+    public void onViewCreated(
+            @NonNull View view,
+            @Nullable Bundle savedInstanceState
+    ) {
+        super.onViewCreated(view, savedInstanceState);
+
+        rvAlarms = view.findViewById(R.id.rv_alarms);
+        tvAddNew = view.findViewById(R.id.tv_add_new);
+
+        alarmDao = new AlarmDao(requireContext());
+
+        databaseExecutor = Executors.newSingleThreadExecutor();
+
+        setupRecyclerView();
+        setupClickListeners();
+        setupCrudResultListener();
+
+        loadAlarms();
+    }
+
+    private void setupRecyclerView() {
+        alarmAdapter = new AlarmAdapter(
+
+                // Bấm vào item để sửa alarm
+                alarm -> openCrudFragment(alarm.getId()),
+
+                // Bật hoặc tắt switch
+                this::updateAlarmEnabled
+        );
+
+        rvAlarms.setLayoutManager(
+                new LinearLayoutManager(requireContext())
+        );
+
+        rvAlarms.setAdapter(alarmAdapter);
+        rvAlarms.setHasFixedSize(true);
+    }
+
+    private void setupClickListeners() {
+        tvAddNew.setOnClickListener(view -> {
+            // alarmId = -1 nghĩa là thêm báo thức mới
+            openCrudFragment(-1);
+        });
+    }
+
+    private void setupCrudResultListener() {
+        getParentFragmentManager()
+                .setFragmentResultListener(
+                        REQUEST_ALARM_CHANGED,
+                        getViewLifecycleOwner(),
+                        (requestKey, bundle) -> {
+
+                            String action = bundle.getString(
+                                    RESULT_ACTION,
+                                    ACTION_SAVED
+                            );
+
+                            loadAlarms();
+
+                            if (ACTION_DELETED.equals(action)) {
+                                showToast("Đã xóa báo thức");
+                            } else {
+                                showToast("Đã lưu báo thức");
+                            }
+                        }
+                );
+    }
+
+    /**
+     * Đọc danh sách từ database và đưa lên RecyclerView.
+     */
+    private void loadAlarms() {
+        if (databaseExecutor == null ||
+                databaseExecutor.isShutdown()) {
+            return;
+        }
+
+        databaseExecutor.execute(() -> {
+            List<Alarm> alarms = alarmDao.getAllAlarms();
+
+            if (!isAdded()) {
+                return;
+            }
+
+            requireActivity().runOnUiThread(() -> {
+                if (!isAdded() || getView() == null) {
+                    return;
+                }
+
+                alarmAdapter.setAlarmList(alarms);
+            });
+        });
+    }
+
+    /**
+     * Object Alarm đã được Adapter thay đổi enabled trước khi vào đây.
+     */
+    private void updateAlarmEnabled(Alarm alarm) {
+        if (databaseExecutor == null ||
+                databaseExecutor.isShutdown()) {
+            return;
+        }
+
+        final Context appContext =
+                requireContext().getApplicationContext();
+
+        databaseExecutor.execute(() -> {
+            int rowsUpdated = alarmDao.updateAlarm(alarm);
+
+            if (rowsUpdated <= 0 && isAdded()) {
+                requireActivity().runOnUiThread(() -> {
+                    showToast("Không thể cập nhật báo thức");
+
+                    // Tải lại để switch trở về trạng thái trong database
+                    loadAlarms();
+                });
+                return;
+            }
+
+            if (alarm.getEnabled()) {
+                AlarmScheduler.schedule(appContext, alarm);
+            } else {
+                AlarmScheduler.cancel(appContext, alarm.getId());
+            }
+        });
+    }
+
+    private void openCrudFragment(int alarmId) {
+        CrudFragment crudFragment =
+                CrudFragment.newInstance(alarmId);
+
+        getParentFragmentManager()
+                .beginTransaction()
+                .replace(
+                        R.id.fragment_container,
+                        crudFragment
+                )
+                .addToBackStack("crud_alarm")
+                .commit();
+    }
+
+    private void showToast(String message) {
+        if (!isAdded()) {
+            return;
+        }
+
+        Toast.makeText(
+                requireContext(),
+                message,
+                Toast.LENGTH_SHORT
+        ).show();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+
+        if (alarmDao != null && alarmAdapter != null) {
+            loadAlarms();
+        }
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+
+        if (databaseExecutor != null) {
+            databaseExecutor.shutdown();
+        }
+
+        rvAlarms = null;
+        tvAddNew = null;
+        alarmAdapter = null;
+    }
+}

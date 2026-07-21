@@ -1,0 +1,39 @@
+package com.example.alarm.Receiver;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+
+import androidx.core.content.ContextCompat;
+
+import com.example.alarm.Service.AlarmService;
+import com.example.alarm.Util.Constants;
+
+/**
+ * Nhận broadcast từ AlarmManager khi đến giờ báo thức,
+ * sau đó chuyển tiếp sang AlarmService để phát nhạc + thông báo.
+ */
+public class AlarmReceiver extends BroadcastReceiver {
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent == null) {
+            return;
+        }
+
+        int alarmId = intent.getIntExtra(
+                Constants.EXTRA_ALARM_ID,
+                Constants.INVALID_ALARM_ID
+        );
+
+        if (alarmId == Constants.INVALID_ALARM_ID) {
+            return;
+        }
+
+        Intent serviceIntent = new Intent(context, AlarmService.class);
+        serviceIntent.setAction(Constants.ACTION_ALARM_TRIGGER);
+        serviceIntent.putExtra(Constants.EXTRA_ALARM_ID, alarmId);
+
+        ContextCompat.startForegroundService(context, serviceIntent);
+    }
+}

@@ -1,0 +1,145 @@
+package com.example.alarm.Util;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+
+import androidx.core.app.NotificationCompat;
+
+import com.example.alarm.Activities.AlarmRingActivity;
+import com.example.alarm.Model.Alarm;
+import com.example.alarm.Service.AlarmService;
+
+import java.util.Locale;
+
+public class NotificationHelper {
+
+    private NotificationHelper() {}
+
+    public static void createNotificationChannel(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+
+        NotificationChannel channel = new NotificationChannel(
+                Constants.NOTIFICATION_CHANNEL_ID,
+                "Alarm",
+                NotificationManager.IMPORTANCE_HIGH
+        );
+
+        channel.setDescription("Thông báo khi báo thức reo");
+
+        /*
+         * Âm thanh do AlarmService tự phát (MusicHelper),
+         * nên tắt sound mặc định của notification.
+         */
+        channel.setSound(null, null);
+        channel.enableVibration(false);
+
+        NotificationManager notificationManager =
+                context.getSystemService(NotificationManager.class);
+
+        if (notificationManager != null) {
+            notificationManager.createNotificationChannel(channel);
+        }
+    }
+
+    /**
+     * Notification hiển thị khi báo thức đang reo.
+     * Dùng full screen intent để bung AlarmRingActivity
+     * kể cả khi màn hình đang khóa.
+     */
+    public static Notification buildAlarmNotification(
+            Context context,
+            Alarm alarm
+    ) {
+        String time = String.format(
+                Locale.getDefault(),
+                "%02d:%02d",
+                alarm.getHour(),
+                alarm.getMinute()
+        );
+
+        String label = alarm.getLabel();
+
+        if (label == null || label.trim().isEmpty()) {
+            label = "Alarm";
+        }
+
+        Intent fullScreenIntent =
+                new Intent(context, AlarmRingActivity.class);
+
+        fullScreenIntent.putExtra(
+                Constants.EXTRA_ALARM_ID, alarm.getId());
+        fullScreenIntent.putExtra(
+                Constants.EXTRA_ALARM_LABEL, label);
+        fullScreenIntent.putExtra(
+                Constants.EXTRA_ALARM_TIME, time);
+
+        fullScreenIntent.setFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_CLEAR_TOP
+        );
+
+        PendingIntent fullScreenPendingIntent =
+                PendingIntent.getActivity(
+                        context,
+                        alarm.getId(),
+                        fullScreenIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT
+                                | PendingIntent.FLAG_IMMUTABLE
+                );
+
+        PendingIntent snoozePendingIntent =
+                buildServicePendingIntent(
+                        context,
+                        alarm.getId() * 10 + 1,
+                        Constants.ACTION_ALARM_SNOOZE
+                );
+
+        PendingIntent dismissPendingIntent =
+                buildServicePendingIntent(
+                        context,
+                        alarm.getId() * 10 + 2,
+                        Constants.ACTION_ALARM_DISMISS
+                );
+
+        return new NotificationCompat.Builder(
+                context,
+                Constants.NOTIFICATION_CHANNEL_ID
+        )
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .setContentTitle(label)
+                .setContentText(time)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .setContentIntent(fullScreenPendingIntent)
+                .setFullScreenIntent(fullScreenPendingIntent, true)
+                .addAction(0, "Snooze", snoozePendingIntent)
+                .addAction(0, "Dismiss", dismissPendingIntent)
+                .build();
+    }
+
+    private static PendingIntent buildServicePendingIntent(
+            Context context,
+            int requestCode,
+            String action
+    ) {
+        Intent intent = new Intent(context, AlarmService.class);
+        intent.setAction(action);
+
+        return PendingIntent.getService(
+                context,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT
+                        | PendingIntent.FLAG_IMMUTABLE
+        );
+    }
+}

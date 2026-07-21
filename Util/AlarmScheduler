@@ -1,0 +1,198 @@
+package com.example.alarm.Util;
+
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+
+import com.example.alarm.DAO.AlarmDao;
+import com.example.alarm.Model.Alarm;
+import com.example.alarm.Receiver.AlarmReceiver;
+
+import java.util.Calendar;
+import java.util.List;
+
+public class AlarmScheduler {
+
+    private AlarmScheduler() {}
+
+    /**
+     * Đặt lịch cho lần reo kế tiếp của alarm.
+     */
+    public static void schedule(Context context, Alarm alarm) {
+        if (alarm == null || !alarm.getEnabled()) {
+            return;
+        }
+
+        long triggerAtMillis = computeNextTriggerMillis(
+                alarm,
+                System.currentTimeMillis()
+        );
+
+        scheduleAt(context, alarm.getId(), triggerAtMillis);
+    }
+
+    /**
+     * Đặt lịch reo lại sau snoozeMinutes phút.
+     */
+    public static void scheduleSnooze(
+            Context context,
+            int alarmId,
+            int snoozeMinutes
+    ) {
+        long triggerAtMillis =
+                System.currentTimeMillis() + snoozeMinutes * 60_000L;
+
+        scheduleAt(context, alarmId, triggerAtMillis);
+    }
+
+    public static void cancel(Context context, int alarmId) {
+        AlarmManager alarmManager =
+                (AlarmManager) context.getSystemService(
+                        Context.ALARM_SERVICE
+                );
+
+        if (alarmManager == null) {
+            return;
+        }
+
+        alarmManager.cancel(buildPendingIntent(context, alarmId));
+    }
+
+    /**
+     * Gọi sau khi máy khởi động lại (BootReceiver)
+     * vì AlarmManager mất hết lịch khi reboot.
+     */
+    public static void rescheduleAllEnabled(Context context) {
+        AlarmDao alarmDao = new AlarmDao(context);
+
+        List<Alarm> alarms = alarmDao.getAllAlarms();
+
+        for (Alarm alarm : alarms) {
+            if (alarm.getEnabled()) {
+                schedule(context, alarm);
+            }
+        }
+    }
+
+    /**
+     * repeatDays dạng "1111100", thứ Hai đứng đầu.
+     * Có ít nhất một ngày bật thì alarm là loại lặp lại.
+     */
+    public static boolean isRepeating(Alarm alarm) {
+        String repeatDays = alarm.getRepeatDays();
+        return repeatDays != null && repeatDays.contains("1");
+    }
+
+    /**
+     * Tính thời điểm reo kế tiếp (millis).
+     *
+     * Alarm một lần: hôm nay nếu chưa qua giờ, ngược lại ngày mai.
+     * Alarm lặp: ngày gần nhất có bit = 1 trong repeatDays.
+     */
+    public static long computeNextTriggerMillis(
+            Alarm alarm,
+            long nowMillis
+    ) {
+        Calendar next = Calendar.getInstance();
+        next.setTimeInMillis(nowMillis);
+        next.set(Calendar.HOUR_OF_DAY, alarm.getHour());
+        next.set(Calendar.MINUTE, alarm.getMinute());
+        next.set(Calendar.SECOND, 0);
+        next.set(Calendar.MILLISECOND, 0);
+
+        if (!isRepeating(alarm)) {
+            if (next.getTimeInMillis() <= nowMillis) {
+                next.add(Calendar.DAY_OF_YEAR, 1);
+            }
+            return next.getTimeInMillis();
+        }
+
+        String repeatDays = alarm.getRepeatDays();
+
+        for (int i = 0; i <= 7; i++) {
+            Calendar candidate = (Calendar) next.clone();
+            candidate.add(Calendar.DAY_OF_YEAR, i);
+
+            if (candidate.getTimeInMillis() <= nowMillis) {
+                continue;
+            }
+
+            /*
+             * Calendar: SUNDAY = 1 ... SATURDAY = 7.
+             * Đổi về index thứ Hai = 0 ... Chủ Nhật = 6.
+             */
+            int mondayFirstIndex =
+                    (candidate.get(Calendar.DAY_OF_WEEK) + 5) % 7;
+
+            if (mondayFirstIndex < repeatDays.length()
+                    && repeatDays.charAt(mondayFirstIndex) == '1') {
+                return candidate.getTimeInMillis();
+            }
+        }
+
+        // Không bao giờ tới đây vì repeatDays có ít nhất một số 1
+        return next.getTimeInMillis();
+    }
+
+    private static void scheduleAt(
+            Context context,
+            int alarmId,
+            long triggerAtMillis
+    ) {
+        AlarmManager alarmManager =
+                (AlarmManager) context.getSystemService(
+                        Context.ALARM_SERVICE
+                );
+
+        if (alarmManager == null) {
+            return;
+        }
+
+        PendingIntent pendingIntent =
+                buildPendingIntent(context, alarmId);
+
+        /*
+         * Android 12+ cần quyền SCHEDULE_EXACT_ALARM
+         * mới được đặt exact alarm.
+         */
+        boolean canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+                || alarmManager.canScheduleExactAlarms();
+
+        if (canExact) {
+            alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+            );
+        } else {
+            alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+            );
+        }
+    }
+
+    private static PendingIntent buildPendingIntent(
+            Context context,
+            int alarmId
+    ) {
+        Intent intent = new Intent(context, AlarmReceiver.class);
+        intent.setAction(Constants.ACTION_ALARM_TRIGGER);
+        intent.putExtra(Constants.EXTRA_ALARM_ID, alarmId);
+
+        /*
+         * requestCode = alarmId để mỗi alarm có
+         * một PendingIntent riêng.
+         */
+        return PendingIntent.getBroadcast(
+                context,
+                alarmId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT
+                        | PendingIntent.FLAG_IMMUTABLE
+        );
+    }
+}

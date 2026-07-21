@@ -1,0 +1,246 @@
+package com.example.alarm.Fragment;
+
+import android.os.Bundle;
+import android.os.CountDownTimer;
+import android.view.View;
+import android.widget.Button;
+import android.widget.NumberPicker;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+
+import com.example.alarm.R;
+import com.example.alarm.Util.MusicHelper;
+
+import java.util.Locale;
+
+public class TimerFragment extends Fragment {
+
+    private static final int STATE_IDLE = 0;
+    private static final int STATE_RUNNING = 1;
+    private static final int STATE_PAUSED = 2;
+
+    private NumberPicker pickerHours;
+    private NumberPicker pickerMinutes;
+    private NumberPicker pickerSeconds;
+
+    private View layoutPickers;
+    private TextView tvCountdown;
+
+    private Button btnStart;
+    private Button btnCancel;
+
+    private CountDownTimer countDownTimer;
+    private MusicHelper musicHelper;
+
+    private long remainingMillis = 0;
+    private int state = STATE_IDLE;
+
+    public TimerFragment() {
+        super(R.layout.fragment_timer);
+    }
+
+    @Override
+    public void onViewCreated(
+            @NonNull View view,
+            @Nullable Bundle savedInstanceState
+    ) {
+        super.onViewCreated(view, savedInstanceState);
+
+        pickerHours = view.findViewById(R.id.picker_hours);
+        pickerMinutes = view.findViewById(R.id.picker_minutes);
+        pickerSeconds = view.findViewById(R.id.picker_seconds);
+
+        layoutPickers = view.findViewById(R.id.layout_pickers);
+        tvCountdown = view.findViewById(R.id.tv_countdown);
+
+        btnStart = view.findViewById(R.id.btn_start);
+        btnCancel = view.findViewById(R.id.btn_cancel);
+
+        musicHelper = new MusicHelper();
+
+        setupPickers();
+        setupClickListeners();
+        updateUi();
+    }
+
+    private void setupPickers() {
+        pickerHours.setMinValue(0);
+        pickerHours.setMaxValue(23);
+
+        pickerMinutes.setMinValue(0);
+        pickerMinutes.setMaxValue(59);
+
+        pickerSeconds.setMinValue(0);
+        pickerSeconds.setMaxValue(59);
+
+        NumberPicker.Formatter twoDigits = value ->
+                String.format(Locale.getDefault(), "%02d", value);
+
+        pickerHours.setFormatter(twoDigits);
+        pickerMinutes.setFormatter(twoDigits);
+        pickerSeconds.setFormatter(twoDigits);
+    }
+
+    private void setupClickListeners() {
+        btnStart.setOnClickListener(view -> {
+            if (state == STATE_IDLE) {
+                startTimer();
+            } else if (state == STATE_RUNNING) {
+                pauseTimer();
+            } else {
+                resumeTimer();
+            }
+        });
+
+        btnCancel.setOnClickListener(view -> cancelTimer());
+    }
+
+    private void startTimer() {
+        long totalMillis =
+                pickerHours.getValue() * 3_600_000L
+                        + pickerMinutes.getValue() * 60_000L
+                        + pickerSeconds.getValue() * 1_000L;
+
+        if (totalMillis <= 0) {
+            Toast.makeText(
+                    requireContext(),
+                    "Hãy chọn thời gian đếm ngược",
+                    Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
+
+        // Hủy chuông của lần đếm trước nếu còn kêu
+        musicHelper.stop();
+
+        remainingMillis = totalMillis;
+        startCountdown();
+    }
+
+    private void startCountdown() {
+        countDownTimer = new CountDownTimer(remainingMillis, 250) {
+
+            @Override
+            public void onTick(long millisUntilFinished) {
+                remainingMillis = millisUntilFinished;
+                tvCountdown.setText(formatMillis(millisUntilFinished));
+            }
+
+            @Override
+            public void onFinish() {
+                remainingMillis = 0;
+                onTimerFinished();
+            }
+        };
+
+        countDownTimer.start();
+
+        state = STATE_RUNNING;
+        updateUi();
+    }
+
+    private void pauseTimer() {
+        if (countDownTimer != null) {
+            countDownTimer.cancel();
+            countDownTimer = null;
+        }
+
+        state = STATE_PAUSED;
+        updateUi();
+    }
+
+    private void resumeTimer() {
+        startCountdown();
+    }
+
+    private void cancelTimer() {
+        if (countDownTimer != null) {
+            countDownTimer.cancel();
+            countDownTimer = null;
+        }
+
+        musicHelper.stop();
+
+        remainingMillis = 0;
+        state = STATE_IDLE;
+        updateUi();
+    }
+
+    private void onTimerFinished() {
+        /*
+         * MusicHelper mặc định tự dừng sau 20 giây,
+         * đủ dùng cho chuông hết giờ của timer.
+         */
+        musicHelper.playDefault(requireContext());
+
+        Toast.makeText(
+                requireContext(),
+                "Hết giờ!",
+                Toast.LENGTH_LONG
+        ).show();
+
+        state = STATE_IDLE;
+        updateUi();
+    }
+
+    private void updateUi() {
+        boolean idle = state == STATE_IDLE;
+
+        layoutPickers.setVisibility(idle ? View.VISIBLE : View.GONE);
+        tvCountdown.setVisibility(idle ? View.GONE : View.VISIBLE);
+
+        if (state == STATE_RUNNING) {
+            btnStart.setText("Pause");
+        } else if (state == STATE_PAUSED) {
+            btnStart.setText("Resume");
+        } else {
+            btnStart.setText("Start");
+        }
+
+        if (!idle) {
+            tvCountdown.setText(formatMillis(remainingMillis));
+        }
+    }
+
+    private String formatMillis(long millis) {
+        long totalSeconds = (millis + 999) / 1000;
+
+        long hours = totalSeconds / 3600;
+        long minutes = (totalSeconds % 3600) / 60;
+        long seconds = totalSeconds % 60;
+
+        return String.format(
+                Locale.getDefault(),
+                "%02d:%02d:%02d",
+                hours,
+                minutes,
+                seconds
+        );
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+
+        if (countDownTimer != null) {
+            countDownTimer.cancel();
+            countDownTimer = null;
+        }
+
+        if (musicHelper != null) {
+            musicHelper.release();
+        }
+
+        pickerHours = null;
+        pickerMinutes = null;
+        pickerSeconds = null;
+        layoutPickers = null;
+        tvCountdown = null;
+        btnStart = null;
+        btnCancel = null;
+    }
+}
